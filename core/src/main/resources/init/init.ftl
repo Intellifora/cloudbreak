@@ -27,7 +27,7 @@ configure_docker() {
   rm -rf /etc/docker/key.json
   sed -i "/other_args=/d" /etc/sysconfig/docker
   sh -c ' echo DOCKER_TLS_VERIFY=0 >> /etc/sysconfig/docker'
-  sh -c ' echo other_args=\"--storage-opt dm.basesize=30G --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2376\" >> /etc/sysconfig/docker'
+  #sh -c ' echo other_args=\"--storage-opt dm.basesize=30G --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2376\" >> /etc/sysconfig/docker'
   service docker restart
 }
 
