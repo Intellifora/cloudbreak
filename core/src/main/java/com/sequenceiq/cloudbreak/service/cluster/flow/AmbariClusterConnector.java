@@ -231,6 +231,13 @@ public class AmbariClusterConnector {
         }
     }
 
+    public AmbariHosts getAmbariHosts(Stack stack) throws CloudbreakSecuritySetupException {
+        Cluster cluster = stack.getCluster();
+        TLSClientConfig clientConfig = tlsSecurityService.buildTLSClientConfig(stack.getId(), cluster.getAmbariIp());
+        return new AmbariHosts(stack, ambariClientProvider.getAmbariClient(clientConfig, cluster.getUserName(),
+                cluster.getPassword()), stack.getFullNodeCount());
+    }
+
     public Cluster resetAmbariCluster(Long stackId) throws CloudbreakSecuritySetupException {
         Stack stack = stackRepository.findOneWithLists(stackId);
         InstanceGroup instanceGroupByType = stack.getGatewayInstanceGroup();
@@ -529,10 +536,7 @@ public class AmbariClusterConnector {
     }
 
     private PollingResult waitForHostsToJoin(Stack stack) throws CloudbreakSecuritySetupException {
-        Cluster cluster = stack.getCluster();
-        TLSClientConfig clientConfig = tlsSecurityService.buildTLSClientConfig(stack.getId(), cluster.getAmbariIp());
-        AmbariHosts ambariHosts = new AmbariHosts(stack, ambariClientProvider.getAmbariClient(clientConfig, cluster.getUserName(),
-                cluster.getPassword()), stack.getFullNodeCount());
+        AmbariHosts ambariHosts = getAmbariHosts(stack);
         return ambariHostJoin.pollWithTimeout(
                 ambariHostsJoinStatusCheckerTask,
                 ambariHosts,

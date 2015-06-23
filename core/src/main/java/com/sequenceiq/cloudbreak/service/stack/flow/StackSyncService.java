@@ -15,10 +15,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import com.sequenceiq.ambari.client.AmbariClient;
 import com.sequenceiq.cloudbreak.cloud.connector.CloudConnectorException;
 import com.sequenceiq.cloudbreak.domain.CloudPlatform;
 import com.sequenceiq.cloudbreak.domain.Cluster;
 import com.sequenceiq.cloudbreak.domain.HostMetadata;
+import com.sequenceiq.cloudbreak.domain.HostMetadataState;
 import com.sequenceiq.cloudbreak.domain.InstanceGroup;
 import com.sequenceiq.cloudbreak.domain.InstanceMetaData;
 import com.sequenceiq.cloudbreak.domain.InstanceStatus;
@@ -28,6 +30,7 @@ import com.sequenceiq.cloudbreak.repository.InstanceGroupRepository;
 import com.sequenceiq.cloudbreak.repository.InstanceMetaDataRepository;
 import com.sequenceiq.cloudbreak.repository.StackUpdater;
 import com.sequenceiq.cloudbreak.service.cluster.flow.AmbariClusterConnector;
+import com.sequenceiq.cloudbreak.service.cluster.flow.AmbariHosts;
 import com.sequenceiq.cloudbreak.service.events.CloudbreakEventService;
 import com.sequenceiq.cloudbreak.service.stack.StackService;
 import com.sequenceiq.cloudbreak.service.stack.connector.MetadataSetup;
@@ -55,11 +58,14 @@ public class StackSyncService {
     @Resource
     private Map<CloudPlatform, MetadataSetup> metadataSetups;
 
-    public void sync(Long stackId) {
+    public void sync(Long stackId) throws Exception {
         Stack stack = stackService.getById(stackId);
+        AmbariClient ambariClient = getAmbariClient(stack);
         Set<InstanceMetaData> instances = instanceMetaDataRepository.findAllInStack(stackId);
         Map<InstanceSyncState, Integer> instanceStateCounts = initInstanceStateCounts();
         for (InstanceMetaData instance : instances) {
+            Map<String, String> hostNames = ambariClient.getHostNames();
+            updateHostMetadataByHostState(stack, ambariClient, instance, hostNames);
             InstanceGroup instanceGroup = instance.getInstanceGroup();
             try {
                 InstanceSyncState state = metadataSetups.get(stack.cloudPlatform()).getState(stack, instance.getInstanceId());
@@ -121,6 +127,22 @@ public class StackSyncService {
         instanceStates.put(InstanceSyncState.IN_PROGRESS, 0);
         instanceStates.put(InstanceSyncState.UNKNOWN, 0);
         return instanceStates;
+    }
+
+    private AmbariClient getAmbariClient(Stack stack) throws Exception {
+        AmbariHosts ambariHosts = ambariClusterConnector.getAmbariHosts(stack);
+        return ambariHosts.getAmbariClient();
+    }
+
+    private void updateHostMetadataByHostState(Stack stack, AmbariClient ambariClient, InstanceMetaData instanceMetaData,
+            Map<String, String> hostNames) {
+        if (hostNames.containsValue(instanceMetaData.getDiscoveryFQDN())) {
+            String hostState = ambariClient.getHostState(instanceMetaData.getDiscoveryFQDN());
+            HostMetadata hostMetadata = hostMetadataRepository.findHostsInClusterByName(stack.getCluster().getId(), instanceMetaData.getDiscoveryFQDN());
+            HostMetadataState newState = HostMetadataState.HEALTHY.name().equals(hostState) ? HostMetadataState.HEALTHY : HostMetadataState.UNHEALTHY;
+            hostMetadata.setHostMetadataState(newState);
+            hostMetadataRepository.save(hostMetadata);
+        }
     }
 
     private void deleteHostFromCluster(Stack stack, InstanceMetaData instanceMetaData) {
